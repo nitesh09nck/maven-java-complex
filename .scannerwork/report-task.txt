@@ -1,0 +1,7 @@
+organization=nitesh09nck
+projectKey=nitesh09nck
+serverUrl=https://sonarcloud.io
+serverVersion=8.0.0.69290
+dashboardUrl=https://sonarcloud.io/dashboard?id=nitesh09nck
+ceTaskId=AZowBV9k3c0_r60dC7d1
+ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AZowBV9k3c0_r60dC7d1
