@@ -104,7 +104,43 @@ jobs:
 
       # Set up kind (Kubernetes in CI runner)
       - name: Set up kind cluster
-        uses: engineerd/setup-kind@v0.5
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: v0.20.0
+
+      # Load Docker image into kind cluster
+      - name: Load Docker Image into kind
+        run: kind load docker-image nitesh09nck/java-project:latest
+
+      # Apply Kubernetes manifests
+      - name: Deploy manifests
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
+
+      # Verify deployment
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -o wide
+          kubectl get svc
+          kubectl get hpa || echo "⚠️ No HPA configured"
+
+  # ✅ JOB 5: Integration Tests against deployed app
+  verify:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Test deployed service
+      - name: Test Service
+        run: |
+          NODE_PORT=$(kubectl get svc java-project -o jsonpath='{.spec.ports[0].nodePort}')
+          curl -f http://localhost:$NODE_PORT/health || exit 1
+
 
 
 
