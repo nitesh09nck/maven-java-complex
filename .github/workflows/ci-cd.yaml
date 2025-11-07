@@ -66,11 +66,12 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-  # 🐳 JOB 3: Docker Build & Push
+  # 🐳 JOB 3: Build & Push Docker Image
   docker:
-    name: Build & Push Docker Image
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: [build-test, sonar-analysis]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,23 +79,26 @@ jobs:
       - name: Download built JAR
         uses: actions/download-artifact@v4
         with:
-          name: app-jar
-          path: target/
+        name: app-jar
+        path: target/
 
-      - name: Build Docker Image
-        run: docker build -t java-project:latest .
+    # ✅ Setup Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Docker Login
-        if: ${{ github.event_name != 'pull_request' && github.repository_owner == 'nitesh09nck' }}
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    # ✅ Login to DockerHub
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Push Docker Image
-        if: ${{ github.event_name != 'pull_request' && github.repository_owner == 'nitesh09nck' }}
-        run: docker tag java-project:latest nitesh09nck/java-project:latest && \
-             docker push nitesh09nck/java-project:latest
+    # ✅ Build and push Docker image
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t nitesh09nck/java-project:latest .
+          docker push nitesh09nck/java-project:latest
+
 
   # ☸️ JOB 4: Deploy to kind cluster
   deploy:
