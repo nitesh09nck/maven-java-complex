@@ -1,18 +1,17 @@
-name: Java CI/CD with kind cluster and SonarCloud
+name: Java CI/CD with kind, Docker, and SonarCloud
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch:
 
 jobs:
   # 🧱 JOB 1: Build and Test
   build-test:
     name: Build and Test
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,10 +44,9 @@ jobs:
 
   # 🔍 JOB 2: SonarCloud Analysis
   sonar-analysis:
-    name: SonarCloud Code Quality Scan
+    name: SonarCloud Scan
     runs-on: ubuntu-latest
     needs: build-test
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,7 +58,7 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: SonarCloud Scan
+      - name: Run SonarCloud Scan
         run: |
           mvn verify sonar:sonar \
             -Dsonar.projectKey=nitesh09nck_java-project \
@@ -68,12 +66,11 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-  # 🐳 JOB 3: Build Docker image (optional push)
+  # 🐳 JOB 3: Docker Build & Push
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
     needs: [build-test, sonar-analysis]
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -85,62 +82,62 @@ jobs:
           path: target/
 
       - name: Build Docker Image
-        run: docker build -t nitesh09nck/java-project:latest .
+        run: docker build -t java-project:latest .
 
       - name: Docker Login
-        if: secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+        if: ${{ github.event_name != 'pull_request' && github.repository_owner == 'nitesh09nck' }}
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
       - name: Push Docker Image
-        if: secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD
-        run: docker push nitesh09nck/java-project:latest
+        if: ${{ github.event_name != 'pull_request' && github.repository_owner == 'nitesh09nck' }}
+        run: docker tag java-project:latest nitesh09nck/java-project:latest && \
+             docker push nitesh09nck/java-project:latest
 
-  # ☸️ JOB 4: Deploy to kind cluster and run CI tests
-  deploy-kind:
-    name: Deploy to kind cluster
+  # ☸️ JOB 4: Deploy to kind cluster
+  deploy:
+    name: Deploy to kind
     runs-on: ubuntu-latest
-    needs: [build-test, sonar-analysis]
-
+    needs: docker
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Download built JAR
-        uses: actions/download-artifact@v4
-        with:
-          name: app-jar
-          path: target/
 
       - name: Set up kind cluster
         uses: engineerd/setup-kind@v0.5.0
         with:
           version: v0.20.0
 
-      - name: Build Docker Image for kind
-        run: docker build -t java-project:latest .
-
       - name: Load Docker image into kind
         run: kind load docker-image java-project:latest
 
-      - name: Deploy Kubernetes manifests
+      - name: Deploy manifests
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
 
-      - name: Wait for deployment rollout
+      - name: Wait for Deployment
         run: kubectl rollout status deployment/java-project-deployment --timeout=180s
 
-      - name: Show pod status and logs for debugging
+      - name: Verify Deployment
         run: |
           kubectl get pods -o wide
-          for POD in $(kubectl get pods -l app=java-project -o jsonpath='{.items[*].metadata.name}'); do
-            echo "Logs for $POD:"
-            kubectl logs $POD || echo "No logs yet"
-          done
+          kubectl get svc
+          kubectl get hpa || echo "⚠️ No HPA configured"
 
-      - name: Test deployed service
+  # ✅ JOB 5: Integration Tests
+  verify:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test Deployed Service
         run: |
           NODE_PORT=$(kubectl get svc java-project -o jsonpath='{.spec.ports[0].nodePort}')
-          echo "Testing http://localhost:$NODE_PORT/health"
           curl -f http://localhost:$NODE_PORT/health || exit 1
