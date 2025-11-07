@@ -1,5 +1,4 @@
----
-name: Java CI/CD with Docker, Kind, and SonarCloud
+name: Java CI/CD with kind and SonarCloud
 
 on:
   workflow_dispatch:
@@ -13,6 +12,7 @@ jobs:
   build-test:
     name: Build and Test
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
           cache: maven
 
@@ -48,6 +48,7 @@ jobs:
     name: SonarCloud Code Quality Scan
     runs-on: ubuntu-latest
     needs: build-test
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -55,7 +56,7 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
           cache: maven
 
@@ -67,11 +68,12 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-  # 🐳 JOB 3: Build & Push Docker Image
+  # 🐳 JOB 3: Build Docker Image
   docker:
-    name: Build and Push Docker Image
+    name: Build Docker Image
     runs-on: ubuntu-latest
     needs: [build-test, sonar-analysis]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,95 +83,64 @@ jobs:
         with:
           name: app-jar
           path: target/
-
-      - name: Docker Login
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
       - name: Build Docker Image
-        run: docker build -t nitesh09nck/java-project:latest .
+        run: docker build -t java-project:latest .
 
-      - name: Push Docker Image
-        run: docker push nitesh09nck/java-project:latest
-
-  # ☸️ JOB 4: Deploy to Kubernetes + Integration Tests
+  # ☸️ JOB 4: Deploy to kind cluster
   deploy:
-    name: Deploy to Kubernetes (kind) and Run Integration Tests
+    name: Deploy to kind cluster
     runs-on: ubuntu-latest
     needs: docker
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-    # Download JAR artifact for Docker build
-      - name: Download built JAR
-        uses: actions/download-artifact@v4
-        with:
-          name: app-jar
-          path: target/
-
-    # Set up kind cluster
-      - name: Set up kind cluster
+      # Set up kind
+      - name: Set up kind
         uses: engineerd/setup-kind@v0.5.0
         with:
           version: v0.20.0
 
-    # Build Docker image for kind
-      - name: Build Docker image for kind
-        run: docker build -t java-project:latest .
-
-    # Load Docker image into kind
+      # Load local Docker image into kind
       - name: Load Docker image into kind
         run: kind load docker-image java-project:latest
 
-    # Apply manifests (make sure deployment.yaml references image: java-project:latest)
-      - name: Deploy manifests
+      # Deploy manifests
+      - name: Deploy Kubernetes manifests
         run: |
-          # Optional: temporarily remove readiness/liveness probes for CI
-          sed -i '/readinessProbe:/,+5d' k8s/deployment.yaml || true
-          sed -i '/livenessProbe:/,+5d' k8s/deployment.yaml || true
-
           kubectl apply -f k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
 
-    # Wait for deployment to be ready
-      - name: Wait for Deployment rollout
-        run: |
-          kubectl rollout status deployment/java-project-deployment --timeout=180s
-          kubectl get pods -o wide
-
-    # Wait for service endpoints
-      - name: Wait for Service endpoints
-        run: |
-          SERVICE_NAME=java-project
-          for i in {1..12}; do
-            ENDPOINTS=$(kubectl get endpoints $SERVICE_NAME -o jsonpath='{.subsets[0].addresses[*].ip}' 2>/dev/null || echo "")
-            if [ -n "$ENDPOINTS" ]; then
-              echo "Service $SERVICE_NAME ready with endpoints: $ENDPOINTS"
-              break
-            fi
-            echo "Waiting for service endpoints..."
-            sleep 5
-          done
-
-    # Debug pod logs if rollout fails
-      - name: Debug pod logs
-        if: failure()
+      # Debug pods if they fail to start
+      - name: Show pod logs for debugging
         run: |
           kubectl get pods -o wide
-          kubectl describe pods
           for POD in $(kubectl get pods -l app=java-project -o jsonpath='{.items[*].metadata.name}'); do
-            echo "Logs for pod $POD:"
+            echo "Logs for $POD:"
             kubectl logs $POD || echo "No logs yet"
           done
 
-    # Optional: Check HPA status
-      - name: Verify HPA
-        run: kubectl get hpa || echo "⚠️ No HPA configured"
+      # Wait for deployment to be ready
+      - name: Wait for deployment rollout
+        run: kubectl rollout status deployment/java-project-deployment --timeout=180s
 
-    # ✅ Integration Tests against deployed app
-      - name: Run Integration Tests
+  # ✅ JOB 5: Integration Tests
+  verify:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Test deployed service inside kind
+      - name: Test Service
         run: |
+          # Get NodePort of the service
           NODE_PORT=$(kubectl get svc java-project -o jsonpath='{.spec.ports[0].nodePort}')
-          echo "Testing service at http://localhost:$NODE_PORT/health"
+          echo "Testing http://localhost:$NODE_PORT/health"
           curl -f http://localhost:$NODE_PORT/health || exit 1
