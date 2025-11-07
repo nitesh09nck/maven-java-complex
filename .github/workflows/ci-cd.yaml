@@ -107,13 +107,12 @@ jobs:
       with:
         version: v0.20.0
 
-    # Build Docker image inside the runner
-    - name: Build Docker Image
+    - name: Build Docker image for kind
       run: docker build -t java-project:latest .
 
-    # Load image into kind
-    - name: Load Docker Image into kind
+    - name: Load Docker image into kind
       run: kind load docker-image java-project:latest
+
 
     # Deploy manifests
     - name: Deploy manifests
