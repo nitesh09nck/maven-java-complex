@@ -138,6 +138,7 @@ jobs:
       # ✅ Integration Tests against deployed app
       - name: Run Integration Tests
         run: |
-          NODE_PORT=$(kubectl get svc java-project -o jsonpath='{.spec.ports[0].nodePort}')
+          |
+          NODE_PORT=$(kubectl get svc java-project-service -o jsonpath='{.spec.ports[0].nodePort}')
           echo "Testing service at http://localhost:$NODE_PORT/health"
           curl -f http://localhost:$NODE_PORT/health || exit 1
