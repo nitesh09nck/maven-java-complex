@@ -94,37 +94,41 @@ jobs:
 
   # ☸️ JOB 4: Deploy to Kubernetes (kind cluster)
   deploy:
-    name: Deploy to Kubernetes (kind)
-    runs-on: ubuntu-latest
-    needs: docker
+  name: Deploy to Kubernetes (kind)
+  runs-on: ubuntu-latest
+  needs: docker
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # Set up kind cluster
+    - name: Set up kind cluster
+      uses: engineerd/setup-kind@v0.5.0
+      with:
+        version: v0.20.0
 
-      # Set up kind (Kubernetes in CI runner)
-      - name: Set up kind cluster
-        uses: engineerd/setup-kind@v0.5.0
-        with:
-          version: v0.20.0
+    # Build Docker image inside the runner
+    - name: Build Docker Image
+      run: docker build -t java-project:latest .
 
-      # Load Docker image into kind cluster
-      - name: Load Docker Image into kind
-        run: kind load docker-image nitesh09nck/java-project:latest
+    # Load image into kind
+    - name: Load Docker Image into kind
+      run: kind load docker-image java-project:latest
 
-      # Apply Kubernetes manifests
-      - name: Deploy manifests
-        run: |
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
+    # Deploy manifests
+    - name: Deploy manifests
+      run: |
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
 
-      # Verify deployment
-      - name: Verify Deployment
-        run: |
-          kubectl get pods -o wide
-          kubectl get svc
-          kubectl get hpa || echo "⚠️ No HPA configured"
+    # Verify deployment
+    - name: Verify Deployment
+      run: |
+        kubectl get pods -o wide
+        kubectl get svc
+        kubectl get hpa || echo "⚠️ No HPA configured"
+
 
   # ✅ JOB 5: Integration Tests against deployed app
   verify:
