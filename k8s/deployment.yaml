@@ -16,7 +16,7 @@ spec:
         - name: java-project
           image: java-project:latest
           ports:
-            - containerPort: 8080
+            - containerPort: 8081   # <-- must match Dockerfile
           resources:
             requests:
               cpu: "100m"
@@ -25,13 +25,14 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 8081   # <-- match Dockerfile
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 8081   # <-- match Dockerfile
             initialDelaySeconds: 15
             periodSeconds: 20
+
 
