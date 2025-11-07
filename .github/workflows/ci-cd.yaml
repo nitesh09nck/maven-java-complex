@@ -1,5 +1,5 @@
 ---
-name: Java CI/CD with Docker and SonarCloud
+name: Java CI/CD with Docker, Kind, and SonarCloud
 
 on:
   workflow_dispatch:
@@ -128,16 +128,33 @@ jobs:
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/hpa.yaml || echo "⚠️ No HPA configured"
 
-      # Verify deployment (pods, services, HPA)
-      - name: Verify Deployment
+      # Wait for deployment to be ready
+      - name: Wait for Deployment rollout
         run: |
+          kubectl rollout status deployment/java-project-deployment --timeout=120s
           kubectl get pods -o wide
-          kubectl get svc
-          kubectl get hpa || echo "⚠️ No HPA configured"
+
+      # Wait for service endpoints
+      - name: Wait for Service endpoints
+        run: |
+          SERVICE_NAME=java-project
+          for i in {1..12}; do
+            ENDPOINTS=$(kubectl get endpoints $SERVICE_NAME -o jsonpath='{.subsets[0].addresses[*].ip}' 2>/dev/null || echo "")
+            if [ -n "$ENDPOINTS" ]; then
+              echo "Service $SERVICE_NAME ready with endpoints: $ENDPOINTS"
+              break
+            fi
+            echo "Waiting for service endpoints..."
+            sleep 5
+          done
+
+      # Optional: Check HPA status
+      - name: Verify HPA
+        run: kubectl get hpa || echo "⚠️ No HPA configured"
 
       # ✅ Integration Tests against deployed app
       - name: Run Integration Tests
         run: |
-          NODE_PORT=$(kubectl get svc java-project-service -o jsonpath='{.spec.ports[0].nodePort}')
+          NODE_PORT=$(kubectl get svc java-project -o jsonpath='{.spec.ports[0].nodePort}')
           echo "Testing service at http://localhost:$NODE_PORT/health"
           curl -f http://localhost:$NODE_PORT/health || exit 1
