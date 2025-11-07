@@ -1,4 +1,4 @@
-name: Java CI/CD with Docker and SonarCloud
+name: Java CI/CD with K8s and SonarCloud
 
 on:
   push:
@@ -92,9 +92,9 @@ jobs:
       - name: Push Docker Image
         run: docker push nitesh09nck/java-project:latest
 
-  # ☸️ JOB 4: Deploy to Kubernetes (kind cluster)
+  # ☸️ JOB 4: Deploy to Kubernetes
   deploy:
-    name: Deploy to Kubernetes (kind)
+    name: Deploy to Minikube (CI Test)
     runs-on: ubuntu-latest
     needs: docker
 
@@ -102,9 +102,62 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up kind (Kubernetes in CI runner)
-      - name: Set up kind cluster
-        uses: engineerd/setup-kind@v0.5
+      # Start Minikube cluster inside the runner
+      - name: Start Minikube
+        uses: medyagh/setup-minikube@master
+        with:
+          kubernetes-version: v1.29.0  # optional
 
+      # Configure kubectl context
+      - name: Configure kubectl
+        run: kubectl config use-context minikube
+
+      # Deploy manifests to the temporary Minikube cluster
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      # Verify deployment (pods, services)
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -o wide
+          kubectl get svc
+          kubectl get hpa
+
+
+  # ✅ JOB 5: Verify Deployment
+  verify:
+    name: Verify Kubernetes Deployment
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v4
+
+    - name: Configure kubeconfig
+      run: |
+        echo "${{ secrets.KUBECONFIG_FILE }}" > kubeconfig.yaml
+        export KUBECONFIG=$PWD/kubeconfig.yaml
+        kubectl config view
+        kubectl cluster-info
+
+    - name: Verify Deployment Status
+      run: |
+        echo "🔍 Checking deployment rollout status..."
+        kubectl rollout status deployment/java-project --timeout=120s
+
+        echo "📦 Listing Pods..."
+        kubectl get pods -o wide
+
+        echo "🌐 Listing Services..."
+        kubectl get svc
+
+        echo "📈 Listing HPA..."
+        kubectl get hpa || echo "⚠️ No HPA configured"
 
 
