@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: java-project
-          image: nitesh09nck/java-project:latest
+          image: java-project:latest
           ports:
             - containerPort: 8080
           resources:
