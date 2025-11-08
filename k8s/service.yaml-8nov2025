@@ -3,11 +3,11 @@ kind: Service
 metadata:
   name: java-project
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: java-project
   ports:
-    - protocol: TCP
-      port: 8081
+    - port: 8081
       targetPort: 8081
+
 
