@@ -65,7 +65,9 @@ jobs:
 
       - name: Configure Kube access
         run: |
+          mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > ~/.kube/config
+          chmod 600 ~/.kube/config
 
       - name: Deploy to test cluster
         run: |
@@ -74,3 +76,4 @@ jobs:
 
       - name: Run Integration Tests
         run: mvn verify -Pintegration-tests
+
