@@ -43,7 +43,7 @@ jobs:
           path: service/target/
 
       - name: Build Docker image
-        run: docker build -t myorg/myapp:${{ github.sha }} .
+        run: docker build -t nitesh09nck/myapp:${{ github.sha }} .
 
       - name: Push Docker image
         env:
@@ -51,7 +51,7 @@ jobs:
           DOCKER_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-          docker push myorg/myapp:${{ github.sha }}
+          docker push nitesh09nck/myapp:${{ github.sha }}
 
   deploy-and-test:
     needs: docker
