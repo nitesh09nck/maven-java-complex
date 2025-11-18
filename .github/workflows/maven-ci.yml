@@ -68,13 +68,19 @@ jobs:
         with:
           cluster_name: ci-cluster
 
+      - name: Verify cluster exists
+        run: |
+          echo "Checking Kind cluster..."
+          kind get clusters
+
+
       # 2. Export kubeconfig from KIND
       - name: Export kubeconfig
         run: |
-          mkdir -p ~/.kube
-          kind get kubeconfig --name ci-cluster > ~/.kube/config
-          chmod 600 ~/.kube/config
-          echo "KUBECONFIG=~/.kube/config" >> $GITHUB_ENV
+          mkdir -p $HOME/.kube
+          kind get kubeconfig --name ci-cluster > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
 
       # 3. Debug kubeconfig
       - name: Debug kubeconfig
