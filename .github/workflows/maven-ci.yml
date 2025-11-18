@@ -1,93 +1,44 @@
-name: Maven Multi-Module CI/CD
+deploy-and-test:
+  needs: docker
+  runs-on: ubuntu-latest
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-jobs:
+    # 1. Create KIND cluster
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.9.0
+      with:
+        cluster_name: ci-cluster
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # 2. Write kubeconfig from the KIND cluster
+    - name: Export kubeconfig
+      run: |
+        mkdir -p ~/.kube
+        kind get kubeconfig --name ci-cluster > ~/.kube/config
+        chmod 600 ~/.kube/config
+        echo "KUBECONFIG=~/.kube/config" >> $GITHUB_ENV
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+    # 3. Confirm kubeconfig (debug)
+    - name: Debug kubeconfig
+      run: |
+        echo "Checking kubeconfig..."
+        ls -la ~/.kube
+        kubectl config view
+        kubectl get nodes
 
-      - name: Build and Unit Test
-        run: mvn -B clean verify -Punit-tests
+    # 4. Update deployment to use correct image tag
+    - name: Update deployment image
+      run: |
+        sed -i "s|image: .*|image: nitesh09nck/myapp:${{ github.sha }}|" k8s/deployment.yaml
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: service-jar
-          path: service/target/*.jar
+    # 5. Deploy with kubectl
+    - name: Deploy to kind cluster
+      run: |
+        kubectl apply -f k8s/deployment.yaml
+        kubectl rollout status deployment/myapp
 
-  docker:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: service-jar
-          path: service/target/
-
-      - name: Build Docker image
-        run: docker build -t nitesh09nck/myapp:${{ github.sha }} .
-
-      - name: Push Docker image
-        env:
-          DOCKER_USER: ${{ secrets.DOCKERHUB_USER }}
-          DOCKER_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-          docker push nitesh09nck/myapp:${{ github.sha }}
-
-  deploy-and-test:
-    needs: docker
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Create a KIND Kubernetes cluster inside GitHub runner
-      - name: Create kind cluster
-        uses: helm/kind-action@v1.9.0
-        with:
-          cluster_name: ci-cluster
-
-      # Export kubeconfig so kubectl can use it
-      - name: Write kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          kind get kubeconfig --name ci-cluster > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      # Replace the image tag in deployment YAML
-      - name: Update deployment image
-        run: |
-          sed -i "s|image: .*|image: nitesh09nck/myapp:${{ github.sha }}|" k8s/deployment.yaml
-
-      # Apply deployment to KIND cluster
-      - name: Deploy to kind cluster
-        env:
-          KUBECONFIG: ~/.kube/config
-        run: |
-          kubectl apply -f k8s/deployment.yaml
-          kubectl rollout status deployment/myapp
-
-      # Run integration tests AFTER deployment
-      - name: Run Integration Tests
-        run: mvn verify -Pintegration-tests
+    # 6. Run Integration Tests
+    - name: Run Integration Tests
+      run: mvn verify -Pintegration-tests
