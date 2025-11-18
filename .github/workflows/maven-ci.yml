@@ -7,6 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -56,24 +57,37 @@ jobs:
   deploy-and-test:
     needs: docker
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+      # Create a KIND Kubernetes cluster inside GitHub runner
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.9.0
+        with:
+          cluster_name: ci-cluster
 
-      - name: Configure Kube access
+      # Export kubeconfig so kubectl can use it
+      - name: Write kubeconfig
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > ~/.kube/config
+          kind get kubeconfig --name ci-cluster > ~/.kube/config
           chmod 600 ~/.kube/config
 
-      - name: Deploy to test cluster
+      # Replace the image tag in deployment YAML
+      - name: Update deployment image
+        run: |
+          sed -i "s|image: .*|image: nitesh09nck/myapp:${{ github.sha }}|" k8s/deployment.yaml
+
+      # Apply deployment to KIND cluster
+      - name: Deploy to kind cluster
+        env:
+          KUBECONFIG: ~/.kube/config
         run: |
           kubectl apply -f k8s/deployment.yaml
           kubectl rollout status deployment/myapp
 
+      # Run integration tests AFTER deployment
       - name: Run Integration Tests
         run: mvn verify -Pintegration-tests
-
