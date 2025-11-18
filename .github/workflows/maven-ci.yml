@@ -55,46 +55,48 @@ jobs:
           docker push nitesh09nck/myapp:${{ github.sha }}
 
   deploy-and-test:
-  needs: docker
-  runs-on: ubuntu-latest
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
 
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # 1. Create KIND cluster
-    - name: Create kind cluster
-      uses: helm/kind-action@v1.9.0
-      with:
-        cluster_name: ci-cluster
+      # 1. Create KIND cluster
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.9.0
+        with:
+          cluster_name: ci-cluster
 
-    # 2. Write kubeconfig from the KIND cluster
-    - name: Export kubeconfig
-      run: |
-        mkdir -p ~/.kube
-        kind get kubeconfig --name ci-cluster > ~/.kube/config
-        chmod 600 ~/.kube/config
-        echo "KUBECONFIG=~/.kube/config" >> $GITHUB_ENV
+      # 2. Export kubeconfig from KIND
+      - name: Export kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          kind get kubeconfig --name ci-cluster > ~/.kube/config
+          chmod 600 ~/.kube/config
+          echo "KUBECONFIG=~/.kube/config" >> $GITHUB_ENV
 
-    # 3. Confirm kubeconfig (debug)
-    - name: Debug kubeconfig
-      run: |
-        echo "Checking kubeconfig..."
-        ls -la ~/.kube
-        kubectl config view
-        kubectl get nodes
+      # 3. Debug kubeconfig
+      - name: Debug kubeconfig
+        run: |
+          echo "--- kubeconfig file ---"
+          ls -la ~/.kube
+          echo "--- kubectl context ---"
+          kubectl config view
+          echo "--- cluster nodes ---"
+          kubectl get nodes
 
-    # 4. Update deployment to use correct image tag
-    - name: Update deployment image
-      run: |
-        sed -i "s|image: .*|image: nitesh09nck/myapp:${{ github.sha }}|" k8s/deployment.yaml
+      # 4. Update deployment image
+      - name: Update deployment image
+        run: |
+          sed -i "s|image: .*|image: nitesh09nck/myapp:${{ github.sha }}|" k8s/deployment.yaml
 
-    # 5. Deploy with kubectl
-    - name: Deploy to kind cluster
-      run: |
-        kubectl apply -f k8s/deployment.yaml
-        kubectl rollout status deployment/myapp
+      # 5. Deploy app to KIND
+      - name: Deploy to kind cluster
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl rollout status deployment/myapp
 
-    # 6. Run Integration Tests
-    - name: Run Integration Tests
-      run: mvn verify -Pintegration-tests
+      # 6. Integration tests
+      - name: Run Integration Tests
+        run: mvn verify -Pintegration-tests
